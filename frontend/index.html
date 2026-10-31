@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Batchmate</title>
+  <meta name="description" content="Mock interviews that remember you, and what your seniors were asked.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231D3B8B'/><path d='M9 4v24' stroke='%23C8233A' stroke-width='2'/><path d='M13 11h12M13 16h12M13 21h8' stroke='white' stroke-width='2'/></svg>">
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Batchmate</h1>
+      <p>Mock interviews that remember you, and what your seniors were asked.</p>
+    </div>
+    <label class="who">
+      <span>You are</span>
+      <select id="user">
+        <option value="priya">Priya (demo student)</option>
+        <option value="arjun">Arjun (demo student)</option>
+        <option value="coordinator-demo">Placement coordinator</option>
+      </select>
+    </label>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="mock">Mock interview</button>
+    <button role="tab" aria-selected="false" data-tab="memory">My memory</button>
+    <button role="tab" aria-selected="false" data-tab="share">Share an experience</button>
+    <button role="tab" aria-selected="false" data-tab="coord">Coordinator</button>
+  </nav>
+
+  <main>
+    <!-- Mock interview -->
+    <section id="tab-mock" class="panel" role="tabpanel">
+      <form id="setup" class="setup">
+        <label>Company <input name="company" value="Amazon" required></label>
+        <label>Role <input name="role" value="SDE intern" required></label>
+        <label class="narrow">Days left <input name="days" type="number" min="1" max="60" value="5"></label>
+        <label class="switch">
+          <input type="checkbox" name="memory" checked>
+          <span class="track" aria-hidden="true"></span>
+          <span class="switch-label">Memory on</span>
+        </label>
+        <button class="primary" type="submit">Start mock</button>
+      </form>
+
+      <div class="sheet">
+        <aside class="margin" aria-label="What the coach recalled">
+          <div id="plan"></div>
+          <div id="recalled">
+            <p class="note muted">Start a mock. Anything I remember about you or your seniors will show up here.</p>
+          </div>
+        </aside>
+        <div class="ruled">
+          <ol id="chat" class="chat" aria-live="polite"></ol>
+          <form id="answer-form" class="answer" hidden>
+            <label for="answer" class="sr-only">Your answer</label>
+            <textarea id="answer" rows="4" placeholder="Answer as you would out loud. Ctrl+Enter to send."></textarea>
+            <button class="primary" type="submit">Send answer</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- My memory -->
+    <section id="tab-memory" class="panel" role="tabpanel" hidden>
+      <div class="intro">
+        <h2>What Batchmate remembers about you</h2>
+        <p>Only you can see this. Mark a weak spot as fixed when you've got it, or forget anything.</p>
+      </div>
+      <label class="switch block">
+        <input type="checkbox" id="optin">
+        <span class="track" aria-hidden="true"></span>
+        <span class="switch-label">Let my weak topics count toward anonymous batch tips (only shown when 3 or more students share a topic)</span>
+      </label>
+      <ul id="memories" class="memories"></ul>
+    </section>
+
+    <!-- Share -->
+    <section id="tab-share" class="panel" role="tabpanel" hidden>
+      <div class="intro">
+        <h2>Share what you were asked</h2>
+        <p>Names, emails and phone numbers are removed. Only topics are kept, never the exact questions.</p>
+      </div>
+      <form id="share-form" class="stack">
+        <textarea name="text" rows="7" required placeholder="Round 1 was an online test with a sliding window question. Round 2 started with my project, then an LRU cache…"></textarea>
+        <div class="row">
+          <label>Company <input name="company" value="Amazon" required></label>
+          <label>Role <input name="role" value="SDE intern" required></label>
+          <label>Interview date <input name="date" type="date" required></label>
+        </div>
+        <button class="primary" type="submit">Add to batch knowledge</button>
+      </form>
+      <div id="share-out"></div>
+    </section>
+
+    <!-- Coordinator -->
+    <section id="tab-coord" class="panel" role="tabpanel" hidden>
+      <div class="intro">
+        <h2>Patterns waiting for your approval</h2>
+        <p>Students only see a pattern after you approve it. The Steward finds new ones on its own.</p>
+      </div>
+      <div class="row">
+        <label>Company <input id="c-company" value="Amazon"></label>
+        <label>Role <input id="c-role" value="SDE intern"></label>
+        <button id="steward-run" type="button">Run Steward now</button>
+      </div>
+      <p id="steward" class="muted"></p>
+      <ul id="pending" class="memories"></ul>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
