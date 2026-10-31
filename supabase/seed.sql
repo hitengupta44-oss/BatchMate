@@ -1,0 +1,2 @@
+-- Intentionally empty: seed data needs embeddings, so it's loaded from the backend:
+--   cd backend && MEMORY_BACKEND=supabase python -m seed.seed --approve

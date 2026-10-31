@@ -1,0 +1,5 @@
+# Minimal Supabase CLI config. `supabase start` for local dev, `supabase db push` to deploy.
+project_id = "batchmate"
+
+[db]
+major_version = 15
