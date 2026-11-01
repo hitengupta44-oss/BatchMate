@@ -24,6 +24,7 @@ class FakeMeko:
         self.packs, self.mems, self.calls, self.down = {}, {}, [], False
         self.rewrite = True
         self.search_blind = False
+        self.update_broken = False  # like production: memory_update fails server-side
 
     def call(self, tool, args, timeout=30):
         self.calls.append(tool)
@@ -68,6 +69,9 @@ class FakeMeko:
                     for i, m in self.mems.items() if m["datapack_id"] == args["datapack_id"]]
             return {"data": {"memories": sorted(rows, key=lambda r: -r["score"])[:args.get("limit", 10)]}}
         if tool == "memory_update":
+            if self.update_broken:
+                raise MekoError("memory_update failed: Error calling tool 'memory_update': "
+                                "Object of type UUID is not JSON serializable")
             m = self.mems[args["memory_id"]]
             assert m["agent_id"] == args["agent_id"], "agent_id must match writer"
             m["text"] = args["text"]
@@ -136,6 +140,15 @@ def test_meko_backend():
                            meta={"topic": "trees_graphs"}), requester="priya")  # create → CONFLICT → recover
     assert restarted.get(svc.list("student-priya", "priya", kinds=["weakness"])[0].id)
     fake.search_blind = False
+    # memory_update broken on the server → the change still reaches Meko (add new, delete old).
+    fake.update_broken = True
+    target = next(m for m in svc.ledger.list("student-priya", "priya") if m.meta.get("meko_id"))
+    old_mid = target.meta["meko_id"]
+    after = svc.update(target.id, requester="priya", text=target.text + " (revised)")
+    assert after.meta["meko_id"] != old_mid and old_mid not in fake.mems, "old copy must be replaced"
+    assert "(revised)" in fake.mems[after.meta["meko_id"]]["text"]
+    fake.update_broken = False
+
     print("meko OK:", len(fake.mems), "memories in", len(fake.packs), "datapacks;",
           {t: fake.calls.count(t) for t in set(fake.calls)})
 

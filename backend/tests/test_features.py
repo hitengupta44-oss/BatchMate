@@ -58,6 +58,9 @@ def test_features():
     answer, used = coach.ask("priya", "What should I focus on before my Amazon interview?")
     assert answer and used, answer
     assert all(u.scope.startswith(("student-priya", "company-", "batch-")) for u in used)
+    # A broad question with no matching words still gets a plan built from memory.
+    broad, used_b = coach.ask("priya", "How do I prepare for the interview?")
+    assert used_b and "don't have" not in broad, broad
     # ...never from another student's private memory.
     _, used_a = coach.ask("arjun", "What am I weak at?")
     assert all(not u.scope.startswith("student-priya") for u in used_a)

@@ -338,9 +338,13 @@ class MekoMemoryService(MemoryService):
                         meta = {}
                 m_tag = _TAG.search(text)
                 bm_id = meta.get("bm_id") or (m_tag.group(1) if m_tag else None)
-                rec = self.ledger.get(bm_id) if bm_id else None
-                if rec is None:
-                    rec = self._match(scope, text)  # Meko rewrote the text and dropped our tag
+                try:
+                    rec = self.ledger.get(bm_id) if bm_id else None
+                    if rec is None:
+                        rec = self._match(scope, text)  # Meko rewrote the text and dropped our tag
+                except Exception as e:  # ledger hiccup: never fail a whole mock over one lookup
+                    print(f"[meko] ledger lookup failed for {bm_id}: {e!r}")
+                    rec = None
                 if rec is None:
                     # Meko returned something the ledger doesn't know (e.g. an auto-extracted fact).
                     # Still honest to show; infer what we can from the text.
@@ -386,10 +390,37 @@ class MekoMemoryService(MemoryService):
         if {"text", "status", "source_count"} & set(changes) and mem.meta.get("meko_id"):
             try:
                 self._call("memory_update", {
-                    "memory_id": mem.meta["meko_id"], "text": tagged(mem),
+                    "memory_id": str(mem.meta["meko_id"]), "text": tagged(mem),
                     "agent_id": self._agent(mem), "datapack_id": self.datapack_id(mem.scope, kind=mem.kind)})
             except MekoError as e:
-                print(f"[meko] update not mirrored for {memory_id}: {e}")
+                # Meko's memory_update currently fails server-side ("Object of type UUID is not JSON
+                # serializable"). Mirror the change another way: add the new version, drop the old.
+                mem = self._replace_in_meko(mem, e)
+        return mem
+
+    def _replace_in_meko(self, mem: Memory, why: Exception) -> Memory:
+        old_id = mem.meta.get("meko_id")
+        try:
+            new_id = self._push(mem)
+        except MekoError as e:
+            print(f"[meko] update not mirrored for {mem.id}: {why}; re-add failed: {e}")
+            return mem
+        dp = self.datapack_id(mem.scope, kind=mem.kind)
+        if new_id and mem.kind == "pattern" and mem.status == "active":
+            try:
+                self._call("memory_promote", {"memory_ids": [new_id], "agent_id": self._agent(mem),
+                                              "datapack_id": dp})
+            except MekoError as e:
+                print(f"[meko] promote of replacement deferred for {mem.id}: {e}")
+        if old_id and old_id != new_id:
+            try:
+                self._call("memory_delete_by_id", {"memory_id": str(old_id), "agent_id": self._agent(mem),
+                                                   "datapack_id": dp})
+            except MekoError as e:
+                print(f"[meko] old copy of {mem.id} not removed: {e}")
+        meta = {**mem.meta, "meko_id": new_id or old_id, "meko_synced": True}
+        mem = self.ledger.update(mem.id, requester=SYSTEM, meta=meta)
+        print(f"[meko] {mem.id} mirrored by replace (memory_update unavailable)")
         return mem
 
     def forget(self, memory_id, requester):

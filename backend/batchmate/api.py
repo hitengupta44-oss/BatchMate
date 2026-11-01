@@ -247,10 +247,14 @@ def mark_fixed(mid: str, user: str = Depends(current_user)):
 @api.post("/experiences")
 @readable_errors
 def contribute(req: ExperienceReq, bg: BackgroundTasks, user: str = Depends(current_user)):
-    mems = curator.curate(req.text, req.company, req.role, req.interview_date.year,
-                          req.interview_date.isoformat(), names=req.names_to_strip + [user])
-    if mems:  # new evidence → look for patterns right away
-        bg.add_task(pattern.find_and_propose, req.company, req.role)
+    mems, reason = curator.curate_report(req.text, req.company, req.role, req.interview_date.year,
+                                         req.interview_date.isoformat(), names=req.names_to_strip + [user])
+    if reason == "duplicate":
+        raise HTTPException(409, "This exact experience was already shared, so it isn't counted twice.")
+    if reason == "no_topics":
+        raise HTTPException(422, "No interview topics found. Mention rounds and topics, "
+                                 "like \"Round 2: LRU cache\".")
+    bg.add_task(pattern.find_and_propose, req.company, req.role)  # new evidence → look for patterns now
     return [m.to_dict() for m in mems]
 
 
