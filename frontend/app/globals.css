@@ -253,6 +253,31 @@ textarea { resize: vertical; }
 .form-error { color: var(--margin-red); font-weight: 600; }
 .fineprint { font-size: 0.8rem; color: var(--muted); margin: 14px 0 0; }
 
+/* ---------- ask your coach ---------- */
+.sheet-ask { grid-template-columns: 1fr; }
+.ask-head p { font-family: var(--font-serif), Georgia, serif; font-size: 1.05rem; line-height: 1.6; margin: 0; max-width: 62ch; }
+.starters { display: flex; flex-wrap: wrap; gap: 8px; }
+.starter {
+  font: inherit; font-size: 0.92rem; text-align: left; cursor: pointer; color: var(--ink);
+  background: white; border: 1px dashed var(--ink-soft); border-radius: var(--radius); padding: 8px 12px;
+}
+.ask-turn { display: flex; flex-direction: column; gap: 8px; }
+.coach-answer { background: rgba(255, 255, 255, 0.85); border-left: 3px solid var(--ink); padding: 8px 14px; }
+.coach-answer .q { margin: 0; }
+.sources { margin-top: 10px; }
+.sources-label { font-size: 0.78rem; font-weight: 700; color: var(--margin-red); }
+.sources ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.source { font-family: var(--font-hand), cursive; font-size: 1.25rem; line-height: 1.15; color: var(--ink); }
+.source mark { background: linear-gradient(transparent 45%, var(--highlight) 45%); color: inherit; padding: 0 2px; }
+.source .note-source { display: block; }
+.sources-none { font-size: 0.82rem; color: var(--muted); margin: 6px 0 0; }
+
+/* ---------- profile ---------- */
+.projects { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: white; }
+.projects legend { font-weight: 700; padding: 0 4px; }
+.project-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr) auto; gap: 10px; align-items: end; }
+@media (max-width: 760px) { .project-row { grid-template-columns: 1fr; } }
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50;

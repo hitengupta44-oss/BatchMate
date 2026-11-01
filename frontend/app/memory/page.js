@@ -10,6 +10,8 @@ const KIND = {
   strength: "Strength",
   session: "Session summary",
   next_plan: "Next session",
+  student_profile: "Profile",
+  asked: "Question already asked",
 };
 
 export default function Memory() {
@@ -43,8 +45,9 @@ export default function Memory() {
   };
 
   if (!session) return null;
-  const active = (rows || []).filter((m) => m.status === "active");
-  const past = (rows || []).filter((m) => m.status !== "active");
+  const asked = (rows || []).filter((m) => m.kind === "asked");
+  const active = (rows || []).filter((m) => m.status === "active" && m.kind !== "asked");
+  const past = (rows || []).filter((m) => m.status !== "active" && m.kind !== "asked");
 
   return (
     <Shell>
@@ -94,6 +97,28 @@ export default function Memory() {
             </li>
           ))}
         </ul>
+
+        {asked.length > 0 && (
+          <details className="past">
+            <summary>Questions you've already been asked ({asked.length}). The coach won't repeat these.</summary>
+            <ul className="cards">
+              {asked.map((m) => (
+                <li key={m.id} className="card card-past">
+                  <div>
+                    <p className="card-text">{m.meta && m.meta.question ? m.meta.question : m.text}</p>
+                    <span className="card-meta">asked {m.created_at.slice(0, 10)}</span>
+                  </div>
+                  <div className="card-actions">
+                    <button className="btn btn-quiet" onClick={() =>
+                      act(() => api(`/memory/${m.id}`, { method: "DELETE" }), "Forgotten. It may be asked again.")}>
+                      Allow again
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
 
         {past.length > 0 && (
           <details className="past">

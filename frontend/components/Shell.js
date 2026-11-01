@@ -8,7 +8,9 @@ import { useSession } from "../lib/session";
 
 const STUDENT_TABS = [
   { href: "/mock", label: "Mock interview" },
+  { href: "/ask", label: "Ask your coach" },
   { href: "/memory", label: "My memory" },
+  { href: "/profile", label: "My profile" },
   { href: "/share", label: "Share an experience" },
 ];
 const COORD_TABS = [

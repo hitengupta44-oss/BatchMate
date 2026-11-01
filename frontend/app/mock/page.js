@@ -43,7 +43,7 @@ function MarginNote({ r, onForget, label }) {
           </span>
         )}
       </p>
-      {r.personal && r.kind !== "next_plan" && (
+      {r.personal && !["next_plan", "asked", "student_profile"].includes(r.kind) && (
         <button className="note-forget" type="button" onClick={() => onForget(r)}>
           Forget this
         </button>
