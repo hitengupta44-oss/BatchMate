@@ -50,6 +50,8 @@ def _first(d: dict, *keys):
 
 
 _ID_KEYS = ("datapack_id", "id", "uuid", "conversation_id")
+SEARCH_TTL_S = 45   # reuse an identical memory_search for this long (cleared on any write)
+MISSING_TTL_S = 300  # don't re-check a datapack that didn't exist for this long
 
 
 def _all_dicts(data):
@@ -72,6 +74,20 @@ def _deep_id(data, keys=_ID_KEYS) -> str | None:
     return None
 
 
+def _pack_id_for(data, name: str) -> str | None:
+    """Id of the object in a Meko reply whose fields include this exact datapack name."""
+    for d in _all_dicts(data):
+        if any(isinstance(v, str) and v == name for v in d.values()):
+            for k in ("datapack_id", "id", "uuid"):
+                v = d.get(k)
+                if isinstance(v, (str, int)) and str(v) and str(v) != name:
+                    return str(v)
+            nested = _deep_id({k: v for k, v in d.items() if isinstance(v, (dict, list))})
+            if nested:
+                return nested
+    return None
+
+
 def _rows(data) -> list[dict]:
     if isinstance(data, list):
         return data
@@ -88,6 +104,9 @@ class MekoMemoryService(MemoryService):
         self.prefix = prefix or config.MEKO_DATAPACK_PREFIX
         self._dp: dict[str, str] = {}
         self._conv: dict[str, str] = {}  # datapack id → conversation id
+        self._last_lookup: str | None = None
+        self._missing: dict[str, float] = {}       # pack key → when we last saw it doesn't exist
+        self._search_cache: dict[tuple, tuple] = {}  # (dp, query, limit) → (at, reply)
         self._tix: dict[str, tuple] = {}  # scope → (cached_at, normalised text → ledger memory)
 
     # ---------- Meko call conventions ----------
@@ -114,6 +133,8 @@ class MekoMemoryService(MemoryService):
             raise MekoError(f"{tool}: refusing to call Meko without a datapack_id")
         if "conversation_id" not in args:
             args["conversation_id"] = self.conversation_id(args.get("datapack_id"))
+        if tool in ("memory_add", "memory_update", "memory_delete_by_id", "memory_promote"):
+            self._invalidate(args.get("datapack_id"))
         return self.meko.call(tool, args)
 
     # ---------- datapacks ----------
@@ -125,14 +146,27 @@ class MekoMemoryService(MemoryService):
         return f"{self.prefix}-{self.pack_key(scope, kind)}"
 
     def _find_pack(self, name: str) -> str | None:
-        """Look the datapack up by name (exact match first, then partial query)."""
-        for args in ({"name": name, "limit": 20}, {"query": name, "limit": 50}):
-            data = self._call("datapack_search", args)
-            for r in _all_dicts(data):
-                if r.get("name") == name:
-                    dp = _deep_id(r)
-                    if dp:
-                        return dp
+        """Find a datapack's id by its exact name.
+
+        Meko's listing shape isn't documented and has differed from the docs, so: try search by
+        name, by query, then the full list; in each reply, find any object that carries the name
+        in ANY string field, and take the id from that object."""
+        attempts = (("datapack_search", {"name": name, "limit": 20}),
+                    ("datapack_search", {"query": name, "limit": 100}),
+                    ("datapack_list", {"query": name, "limit": 100}),
+                    ("datapack_list", {}))
+        last = None
+        for tool, args in attempts:
+            try:
+                data = self._call(tool, args)
+            except MekoError as e:
+                last = f"{tool}: {e}"
+                continue
+            dp = _pack_id_for(data, name)
+            if dp:
+                return dp
+            last = f"{tool} → {str(data)[:300]}"
+        self._last_lookup = last  # kept for the error message below
         return None
 
     def datapack_id(self, scope: str, create: bool = True, kind: str | None = None) -> str | None:
@@ -140,17 +174,31 @@ class MekoMemoryService(MemoryService):
         if key in self._dp:
             return self._dp[key]
         name = self.datapack_name(scope, kind)
+        if not create and time.time() - self._missing.get(key, 0) < MISSING_TTL_S:
+            return None  # looked a moment ago and it didn't exist: don't ask Meko again
         dp = self._find_pack(name)
         if dp is None and not create:
+            self._missing[key] = time.time()
+            # Recall must still work after a restart: if the ledger knows this scope has memories,
+            # the datapack exists, so a failed lookup is an error worth seeing, not "no context".
+            if self.ledger.list_scopes(scope):
+                print(f"[meko] could not find existing datapack '{name}'. Last reply: {self._last_lookup}")
             return None
         if dp is None:
-            created = self._call("datapack_create", {"name": name})
-            # Prefer the id from Meko's own listing, so we never create duplicates.
-            dp = self._find_pack(name) or _deep_id(created)
+            try:
+                created = self._call("datapack_create", {"name": name})
+                dp = _pack_id_for(created, name) or _deep_id(created)
+            except MekoError as e:
+                if "exist" not in str(e).lower() and "conflict" not in str(e).lower():
+                    raise
+                dp = None  # created earlier (e.g. before a restart): look it up again
+            dp = self._find_pack(name) or dp
             if not dp:
-                raise MekoError(f"datapack '{name}': no id in Meko's reply: {str(created)[:400]}")
+                raise MekoError(f"datapack '{name}' exists but its id can't be read. "
+                                f"Last reply: {self._last_lookup}")
             print(f"[meko] datapack ready: {name} → {dp}")
         self._dp[key] = dp
+        self._missing.pop(key, None)
         return dp
 
     # ---------- write ----------
@@ -204,6 +252,22 @@ class MekoMemoryService(MemoryService):
                     n += self._sync_one(m)
         return n
 
+    # ---------- cached search ----------
+    def _search(self, dp: str, query: str, limit: int):
+        """memory_search, reused for SEARCH_TTL_S: a mock asks Meko the same thing several times
+        (planner, interviewer, panel). Any write to the datapack clears its cache."""
+        key = (dp, query, limit)
+        hit = self._search_cache.get(key)
+        if hit and time.time() - hit[0] < SEARCH_TTL_S:
+            return hit[1]
+        reply = self._call("memory_search", {"query": query, "datapack_id": dp, "limit": limit})
+        self._search_cache[key] = (time.time(), reply)
+        return reply
+
+    def _invalidate(self, dp: str | None):
+        for key in [k for k in self._search_cache if k[0] == dp]:
+            self._search_cache.pop(key, None)
+
     # ---------- mapping Meko hits back to the ledger ----------
     @staticmethod
     def _norm(text: str) -> str:
@@ -250,8 +314,7 @@ class MekoMemoryService(MemoryService):
                 dp = self.datapack_id(scope, create=False, kind=kd)
                 if not dp:
                     return scope, None
-                return scope, self._call("memory_search", {"query": query, "datapack_id": dp,
-                                                           "limit": max(10, k * 4)})
+                return scope, self._search(dp, query, min(max(10, k * 2), 25))
             except MekoError as e:
                 print(f"[meko] recall failed for {scope}: {e}")  # no Meko → no context, never invented
                 return scope, None

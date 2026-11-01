@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
+from ..concurrency import parallel
 from ..llm import structured
 from ..memory import Memory, batch_scope, get_memory, student_scope
 from ..topics import detect_topics, label
@@ -33,14 +34,16 @@ def _company_scopes(question: str) -> list[str]:
 
 def recall(student_id: str, question: str) -> list[Memory]:
     mem = get_memory()
-    hits = mem.recall(question, [student_scope(student_id)], requester=student_id, k=6,
-                      kinds=PERSONAL_KINDS, min_similarity=0.0)
     company = _company_scopes(question)
-    if company:
-        hits += mem.recall(question, company, requester=student_id, k=4, kinds=["pattern"], min_similarity=0.0)
     year = datetime.now(timezone.utc).year
-    hits += mem.recall(question, [batch_scope(year)], requester=student_id, k=2, kinds=["lesson"],
-                       min_similarity=0.05)
+    r = parallel(
+        mine=lambda: mem.recall(question, [student_scope(student_id)], requester=student_id, k=6,
+                                kinds=PERSONAL_KINDS, min_similarity=0.0),
+        company=lambda: mem.recall(question, company, requester=student_id, k=4, kinds=["pattern"],
+                                   min_similarity=0.0) if company else [],
+        batch=lambda: mem.recall(question, [batch_scope(year)], requester=student_id, k=2,
+                                 kinds=["lesson"], min_similarity=0.05))
+    hits = r["mine"] + r["company"] + r["batch"]
     seen, out = set(), []
     for h in sorted(hits, key=lambda h: h.confidence or 0, reverse=True):
         if h.id not in seen:
@@ -94,6 +97,25 @@ def ask(student_id: str, question: str) -> tuple[str, list[Memory]]:
               "suggest what would create it (a mock, or a senior sharing an experience). "
               "List the numbers of the memories you used.")
     user = f"Student question: {question}\n\nRecalled memories:\n{numbered}"
-    reply = structured(Reply, system, user, lambda: _offline(question, hits))
-    used = [hits[i] for i in reply.used if isinstance(i, int) and 0 <= i < len(hits)]
-    return reply.answer, used  # only memories the answer actually used are shown as its sources
+    def safe_offline() -> Reply:
+        try:
+            return _offline(question, hits)
+        except Exception as e:  # never let a formatting edge case fail the whole answer
+            print(f"[coach] offline answer failed: {e!r}")
+            return Reply(answer="I found some related memories but couldn't summarise them. "
+                                "Try asking about one topic, like DBMS transactions.", used=[])
+
+    try:
+        reply = structured(Reply, system, user, safe_offline)
+    except Exception as e:
+        print(f"[coach] model answer failed: {e!r}")
+        reply = safe_offline()
+    used = []
+    for i in reply.used or []:
+        try:
+            i = int(i)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < len(hits) and hits[i] not in used:
+            used.append(hits[i])
+    return (reply.answer or "I don't have anything in memory about that yet."), used

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from ..concurrency import parallel
 from ..llm import structured
 from ..memory import Memory, company_scope, get_memory, student_scope
 from ..memory.base import now_iso
@@ -27,11 +28,12 @@ class Question(BaseModel):
 def recall_for_topic(student_id: str, company: str, topic: str) -> list:
     mem = get_memory()
     q = f"{label(topic)} {company}"
-    personal = mem.recall(q, [student_scope(student_id)], requester=student_id, k=3,
-                          kinds=["weakness", "strength"], min_similarity=0.1)
-    shared = mem.recall(q, [company_scope(company)], requester=student_id, k=2,
-                        kinds=["pattern"], min_similarity=0.1)
-    return [m for m in personal + shared if m.meta.get("topic") == topic]
+    r = parallel(
+        personal=lambda: mem.recall(q, [student_scope(student_id)], requester=student_id, k=3,
+                                    kinds=["weakness", "strength"], min_similarity=0.1),
+        shared=lambda: mem.recall(q, [company_scope(company)], requester=student_id, k=2,
+                                  kinds=["pattern"], min_similarity=0.1))
+    return [m for m in r["personal"] + r["shared"] if m.meta.get("topic") == topic]
 
 
 def recall_asked(student_id: str, topic: str) -> list[str]:
@@ -68,9 +70,10 @@ def next_question(state: dict) -> tuple[Question, list]:
 
     recalled, asked_before, prof = [], [], []
     if memory_on:
-        recalled = recall_for_topic(student, state["company"], topic)
-        asked_before = recall_asked(student, topic)
-        prof = profile_agent.recall_profile(student)
+        r = parallel(recalled=lambda: recall_for_topic(student, state["company"], topic),
+                     asked=lambda: recall_asked(student, topic),
+                     prof=lambda: profile_agent.recall_profile(student))
+        recalled, asked_before, prof = r["recalled"], r["asked"], r["prof"]
     project = profile_agent.project_from(prof)
 
     def offline() -> Question:

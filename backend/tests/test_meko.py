@@ -23,6 +23,7 @@ class FakeMeko:
     def __init__(self):
         self.packs, self.mems, self.calls, self.down = {}, {}, [], False
         self.rewrite = True
+        self.search_blind = False
 
     def call(self, tool, args, timeout=30):
         self.calls.append(tool)
@@ -37,10 +38,16 @@ class FakeMeko:
         if tool == "datapack_search":
             key = args.get("name") or args.get("query")
             # Nested shape on purpose: the real reply didn't match the docs' flat example.
+            if self.search_blind:  # like production: search never matches by name
+                return {"datapacks": [], "has_more": False}
             return {"data": {"items": [{"datapack": {"id": i}, "name": n}
                                        for n, i in self.packs.items() if key and key in n]}}
+        if tool == "datapack_list":
+            # Name under a different field than "name", as Meko may do.
+            return {"datapacks": [{"datapack_name": n, "datapack_id": i} for n, i in self.packs.items()]}
         if tool == "datapack_create":
-            assert args["name"] not in self.packs, "duplicate datapack created"
+            if args["name"] in self.packs:
+                raise MekoError("CONFLICT: failed to create datapack: a datapack with this name already exists")
             self.packs[args["name"]] = "dp_" + uuid.uuid4().hex[:6]
             return {"result": {"datapack": {"uuid": self.packs[args["name"]], "name": args["name"]}}}
         if tool == "memory_add":
@@ -118,6 +125,17 @@ def test_meko_backend():
     assert not svc.get(m.id).meta["meko_synced"]
     fake.down = False
     assert svc.sync() >= 1 and svc.get(m.id).meta["meko_synced"]
+    # Restart: a fresh service forgets datapack ids, and search can't find them by name.
+    fake.search_blind = True
+    restarted = MekoMemoryService(ledger=svc.ledger, client=fake)
+    before = fake.calls.count("memory_search")
+    hits = restarted.recall("LRU cache Amazon", ["company-amazon"], "priya", k=3, kinds=["pattern"])
+    assert fake.calls.count("memory_search") > before, "recall never reached Meko after restart"
+    assert hits, "no patterns recalled after restart"
+    restarted.write(Memory(scope="student-priya", kind="weakness", text="Weak at graphs",
+                           meta={"topic": "trees_graphs"}), requester="priya")  # create → CONFLICT → recover
+    assert restarted.get(svc.list("student-priya", "priya", kinds=["weakness"])[0].id)
+    fake.search_blind = False
     print("meko OK:", len(fake.mems), "memories in", len(fake.packs), "datapacks;",
           {t: fake.calls.count(t) for t in set(fake.calls)})
 

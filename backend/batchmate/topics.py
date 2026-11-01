@@ -157,8 +157,10 @@ def detect_topics(text: str) -> list[str]:
     return [tag for tag, spec in TOPICS.items() if any(k in t for k in spec["keywords"])]
 
 
-def label(tag: str) -> str:
-    return TOPICS.get(tag, {}).get("label", tag.replace("_", " "))
+def label(tag: str | None) -> str:
+    if not tag:
+        return "this topic"
+    return TOPICS.get(tag, {}).get("label", str(tag).replace("_", " "))
 
 
 def short(tag: str) -> str:

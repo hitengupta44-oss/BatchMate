@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from ..concurrency import parallel
 from ..llm import structured
 from datetime import datetime, timezone
 
@@ -20,24 +21,25 @@ class Plan(BaseModel):
 
 
 def recall_context(student_id: str, company: str, role: str) -> dict:
-    """Recall before reasoning: personal weaknesses + verified company patterns."""
+    """Recall before reasoning: personal weaknesses + verified company patterns (in parallel)."""
     mem = get_memory()
-    weaknesses = mem.recall(f"weak areas struggled with in {company} {role} mock interviews",
-                            [student_scope(student_id)], requester=student_id, k=5,
-                            kinds=["weakness"], min_similarity=-1)
-    strengths = mem.recall("answered well", [student_scope(student_id)], requester=student_id, k=5,
-                           kinds=["strength"], min_similarity=-1)
-    patterns = mem.recall(f"{company} {role} interview rounds topics asked",
-                          [company_scope(company)], requester=student_id, k=8, kinds=["pattern"],
-                          min_similarity=-1)
-    # Through recall (Meko), not a ledger read: anything shown as context must come from memory search.
-    commitments = mem.recall("next session drill", [student_scope(student_id)], requester=student_id,
-                             k=1, kinds=["next_plan"], min_similarity=-1)
-    lessons = mem.recall(f"batch working on {company} interview topics",
-                         [batch_scope(datetime.now(timezone.utc).year)], requester=student_id, k=3,
-                         kinds=["lesson"], min_similarity=-1)
-    return {"weaknesses": weaknesses, "strengths": strengths, "patterns": patterns,
-            "commitments": commitments[:1], "lessons": lessons}
+    me, co = [student_scope(student_id)], [company_scope(company)]
+    year = batch_scope(datetime.now(timezone.utc).year)
+    r = parallel(
+        weaknesses=lambda: mem.recall(f"weak areas struggled with in {company} {role} mock interviews", me,
+                                      requester=student_id, k=5, kinds=["weakness"], min_similarity=-1),
+        strengths=lambda: mem.recall("answered well", me, requester=student_id, k=5,
+                                     kinds=["strength"], min_similarity=-1),
+        patterns=lambda: mem.recall(f"{company} {role} interview rounds topics asked", co,
+                                    requester=student_id, k=8, kinds=["pattern"], min_similarity=-1),
+        # Through recall (Meko), not a ledger read: anything shown as context must come from search.
+        commitments=lambda: mem.recall("next session drill", me, requester=student_id, k=1,
+                                       kinds=["next_plan"], min_similarity=-1),
+        lessons=lambda: mem.recall(f"batch working on {company} interview topics", [year],
+                                   requester=student_id, k=3, kinds=["lesson"], min_similarity=-1),
+    )
+    r["commitments"] = r["commitments"][:1]
+    return r
 
 
 def plan(student_id: str, company: str, role: str, days_left: int, memory_on: bool) -> tuple[Plan, dict]:
