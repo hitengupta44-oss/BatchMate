@@ -28,7 +28,7 @@ SUPABASE_KEY = _env("SUPABASE_SERVICE_KEY")
 LLM_CHAIN = [p.strip() for p in _env("LLM_CHAIN", "ollama,groq,gemini").split(",") if p.strip()]
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434")
-GROQ_MODEL = _env("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = _env("GROQ_MODEL", "openai/gpt-oss-120b")  # llama-3.3-70b-versatile was shut down 2026-08-16
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Embeddings: sentence-transformers model; falls back to a hashing embedder if unavailable.
