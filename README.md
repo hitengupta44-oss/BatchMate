@@ -7,10 +7,11 @@ Built by **Team Triton** for the **Meko challenge at hackCBS 9.0** (Track A, ope
 
 | | |
 |---|---|
-| Live app | `https://<your-vercel-url>.vercel.app` |
+| Live app | https://batchmate-frontend.vercel.app/ |
 | Backend API | https://happynishh-batchmate.hf.space (API reference at `/docs`) |
-| Demo video | `<link>` |
-| Meko feature proposal | `<link>` |
+| Demo video | https://drive.google.com/file/d/1qdEEULMe-Sm4g8P1hjSwESlsNqB5PQfx/view?usp=sharing  |
+| Meko feature proposal | https://drive.google.com/file/d/12Smw154VHXCSJIu4qurimPMQxCHxi6ps/view?usp=sharing <img width="1059" height="53" alt="image" src="https://github.com/user-attachments/assets/05e1505d-276a-4973-b336-0c9b2c59ba16" />
+ |
 
 ---
 
