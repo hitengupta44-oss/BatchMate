@@ -45,6 +45,9 @@ if not get_memory().list_scopes("company-"):
     print("[boot] empty store, seeding:", seed(approve=True))
 else:
     print("[boot] store already has data, skipping seed")
+    from seed.seed import ensure_profiles
+
+    print(f"[boot] student profiles added: {ensure_profiles()}")
 
 
 def status():

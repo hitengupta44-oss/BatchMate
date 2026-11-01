@@ -15,9 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import auth, config
-from .agents import curator, pattern, steward, verifier
+from .agents import coach, curator, pattern, steward, verifier
+from .agents import profile as profile_agent
 from .auth import current_user
-from .graph import Coach
+from .graph import Coach, _panel
 from .memory import AccessDenied, get_memory, student_scope
 
 _stop = threading.Event()
@@ -202,6 +203,36 @@ def contribute(req: ExperienceReq, bg: BackgroundTasks, user: str = Depends(curr
     if mems:  # new evidence → look for patterns right away
         bg.add_task(pattern.find_and_propose, req.company, req.role)
     return [m.to_dict() for m in mems]
+
+
+@api.get("/me/profile")
+def get_profile(user: str = Depends(current_user)):
+    if user.startswith("coordinator"):
+        raise HTTPException(403, "Profiles are for students")
+    return profile_agent.get_profile(user).model_dump()
+
+
+@api.put("/me/profile")
+def put_profile(req: profile_agent.Profile, user: str = Depends(current_user)):
+    if user.startswith("coordinator"):
+        raise HTTPException(403, "Profiles are for students")
+    return profile_agent.save_profile(user, req).model_dump()
+
+
+class AskReq(BaseModel):
+    question: str
+
+
+@api.post("/coach/ask")
+def ask_coach(req: AskReq, user: str = Depends(current_user)):
+    """Answers only from what Meko recalls; returns the memories the answer used."""
+    if user.startswith("coordinator"):
+        raise HTTPException(403, "The coach is for students")
+    q = req.question.strip()[:500]
+    if not q:
+        raise HTTPException(400, "Ask a question first")
+    answer, used = coach.ask(user, q)
+    return {"answer": answer, "sources": _panel(used)}
 
 
 @api.get("/me/opt-in")

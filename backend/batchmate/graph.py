@@ -42,6 +42,10 @@ def _panel(mems: list[Memory]) -> list[dict]:
         n = m.source_count
         if m.kind == "next_plan":
             where = "promised in your last session"
+        elif m.kind == "student_profile":
+            where = "from your profile"
+        elif m.kind == "asked":
+            where = "from your memory of earlier sessions"
         elif m.kind == "lesson":
             where = f"from your batch, {n} opted-in students (anonymous)"
         elif personal:
@@ -80,6 +84,8 @@ def evaluate_node(s: State) -> State:
     q = s["question"]
     ev = evaluator.evaluate(q["text"], s["answer"], q["topic"])
     notes = evaluator.remember(s["student_id"], q["topic"], ev, s["session_id"]) if s["memory_on"] else []
+    if s["memory_on"]:  # so the next session never asks this again
+        interviewer.remember_asked(s["student_id"], q["topic"], q["text"], s["session_id"])
     item = {"question": q["text"], "topic": q["topic"], "is_follow_up": q["is_follow_up"],
             "answer": s["answer"], "eval": ev.model_dump()}
     # Follow-ups don't consume a planned topic slot.

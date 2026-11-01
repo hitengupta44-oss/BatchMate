@@ -20,6 +20,18 @@ HERE = Path(__file__).parent
 COMPANY, ROLE = "Amazon", "SDE intern"
 
 
+def ensure_profiles() -> int:
+    """Give each seeded student a profile if they don't have one yet (safe to run on every boot)."""
+    from batchmate.agents import profile as profile_agent
+
+    n = 0
+    for sid, s in json.loads((HERE / "students.json").read_text()).items():
+        if s.get("profile") and not profile_agent._current(sid):
+            profile_agent.save_profile(sid, profile_agent.Profile(**s["profile"]), seeded=True)
+            n += 1
+    return n
+
+
 def seed(approve: bool = False, reset: bool = False) -> dict:
     if reset and config.MEMORY_BACKEND == "local" and os.path.exists(config.LOCAL_STORE_PATH):
         os.remove(config.LOCAL_STORE_PATH)
@@ -42,6 +54,7 @@ def seed(approve: bool = False, reset: bool = False) -> dict:
                              meta={"topic": st["topic"], "sessions": st["sessions"],
                                    "observed_at": st["observed_at"], "seeded": True}), requester=SYSTEM)
 
+    ensure_profiles()
     proposals = pattern.find_and_propose(COMPANY, ROLE)
     if approve:
         for p in proposals:
