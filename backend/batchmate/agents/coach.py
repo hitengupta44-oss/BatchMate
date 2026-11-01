@@ -32,24 +32,39 @@ def _company_scopes(question: str) -> list[str]:
     return named or scopes  # shared and readable by every student
 
 
+# Fixed searches that pull the student's core prep context, whatever the wording of the question.
+# A broad question ("how should I prepare?") rarely matches stored memories word for word, so the
+# coach also recalls these every time. Still through Meko search: nothing comes from elsewhere.
+CORE_PERSONAL = "weak areas still to improve, next session drill, profile projects and target companies"
+CORE_COMPANY = "interview rounds and topics seniors were asked"
+
+
 def recall(student_id: str, question: str) -> list[Memory]:
     mem = get_memory()
+    me = [student_scope(student_id)]
     company = _company_scopes(question)
     year = datetime.now(timezone.utc).year
     r = parallel(
-        mine=lambda: mem.recall(question, [student_scope(student_id)], requester=student_id, k=6,
+        mine=lambda: mem.recall(question, me, requester=student_id, k=6,
                                 kinds=PERSONAL_KINDS, min_similarity=0.0),
+        core=lambda: mem.recall(CORE_PERSONAL, me, requester=student_id, k=6,
+                                kinds=["weakness", "next_plan", "student_profile", "strength"],
+                                min_similarity=-1),
         company=lambda: mem.recall(question, company, requester=student_id, k=4, kinds=["pattern"],
                                    min_similarity=0.0) if company else [],
+        core_company=lambda: mem.recall(CORE_COMPANY, company, requester=student_id, k=4,
+                                        kinds=["pattern"], min_similarity=-1) if company else [],
         batch=lambda: mem.recall(question, [batch_scope(year)], requester=student_id, k=2,
                                  kinds=["lesson"], min_similarity=0.05))
-    hits = r["mine"] + r["company"] + r["batch"]
+    # Question-specific hits first, then the core context.
+    hits = sorted(r["mine"] + r["company"] + r["batch"], key=lambda h: h.confidence or 0, reverse=True)
+    hits += r["core"] + r["core_company"]
     seen, out = set(), []
-    for h in sorted(hits, key=lambda h: h.confidence or 0, reverse=True):
+    for h in hits:
         if h.id not in seen:
             seen.add(h.id)
             out.append(h)
-    return out[:8]
+    return out[:10]
 
 
 _RANK = {"next_plan": 0, "weakness": 1, "pattern": 2, "lesson": 3, "session": 4, "strength": 5,
@@ -92,10 +107,13 @@ def ask(student_id: str, question: str) -> tuple[str, list[Memory]]:
     numbered = "\n".join(f"[{i}] ({h.kind}) {h.text}" for i, h in enumerate(hits)) or "(nothing recalled)"
     system = ("You are Batchmate, a placement-prep coach. Answer ONLY from the numbered memories "
               "recalled from the student's memory and their batch's verified knowledge. Do not add "
-              "facts, company details or statistics that are not in the memories. If the memories "
-              "don't answer the question, say plainly that you don't have that in memory yet and "
-              "suggest what would create it (a mock, or a senior sharing an experience). "
-              "List the numbers of the memories you used.")
+              "facts, company details or statistics that are not in the memories. "
+              "For broad questions (how to prepare, what to focus on, what to do next), build a short, "
+              "prioritised plan from what IS in the memories: the drill promised for next session "
+              "first, then the student's weak spots, then the topics seniors were asked at their "
+              "target company, then their own projects. Only if no memory is relevant at all, say "
+              "plainly that you don't have that in memory yet and suggest what would create it (a "
+              "mock, or a senior sharing an experience). List the numbers of the memories you used.")
     user = f"Student question: {question}\n\nRecalled memories:\n{numbered}"
     def safe_offline() -> Reply:
         try:
