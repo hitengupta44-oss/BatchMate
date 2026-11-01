@@ -48,8 +48,11 @@ def _panel(mems: list[Memory]) -> list[dict]:
             where = f"from your memory, {n} session{'s' * (n > 1)}"
         else:
             where = f"from batch knowledge, {n} verified report{'s' * (n > 1)}"
+        if m.meta.get("seeded"):
+            where += " (seeded demo data)"
         out.append({"id": m.id, "source": where, "text": m.text, "kind": m.kind,
-                    "confidence": m.confidence, "personal": personal})
+                    "confidence": m.confidence, "personal": personal,
+                    "via": "Meko" if m.meta.get("from_meko") else "local store"})
     return out
 
 
@@ -160,6 +163,12 @@ class Coach:
                            "days_left": days_left, "memory_on": memory_on,
                            "max_turns": max_turns or config.MOCK_TURNS}, self._cfg(sid))
         return self._view(sid)
+
+    def owner(self, sid: str) -> str | None:
+        try:
+            return self.graph.get_state(self._cfg(sid)).values.get("student_id")
+        except Exception:
+            return None
 
     def answer(self, sid: str, text: str) -> dict:
         from langgraph.types import Command

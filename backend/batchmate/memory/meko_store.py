@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 
 from .. import config
@@ -86,6 +88,7 @@ class MekoMemoryService(MemoryService):
         self.prefix = prefix or config.MEKO_DATAPACK_PREFIX
         self._dp: dict[str, str] = {}
         self._conv: dict[str, str] = {}  # datapack id → conversation id
+        self._tix: dict[str, tuple] = {}  # scope → (cached_at, normalised text → ledger memory)
 
     # ---------- Meko call conventions ----------
     def conversation_id(self, dp: str | None) -> str:
@@ -201,6 +204,36 @@ class MekoMemoryService(MemoryService):
                     n += self._sync_one(m)
         return n
 
+    # ---------- mapping Meko hits back to the ledger ----------
+    @staticmethod
+    def _norm(text: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9]+", strip_tag(text).lower()))[:120]
+
+    def _text_index(self, scope: str) -> dict[str, Memory]:
+        """If Meko rewrites a memory (fact extraction) and drops our [bm:id] tag, match it back by
+        its normalised text. Cached briefly; the ledger only enriches what Meko returned."""
+        now = time.time()
+        hit = self._tix.get(scope)
+        if hit and now - hit[0] < 30:
+            return hit[1]
+        idx = {self._norm(m.text): m for m in self.ledger.list(scope, SYSTEM)}
+        self._tix[scope] = (now, idx)
+        return idx
+
+    def _match(self, scope: str, text: str) -> Memory | None:
+        key = self._norm(text)
+        if not key:
+            return None
+        idx = self._text_index(scope)
+        if key in idx:
+            return idx[key]
+        # Rewritten text: accept a ledger memory that contains it (or vice versa), if long enough.
+        if len(key) >= 24:
+            for k, m in idx.items():
+                if key in k or k in key:
+                    return m
+        return None
+
     # ---------- recall: Meko only ----------
     def recall(self, query, scopes, requester, k=5, kinds=None, statuses=("active",),
                weight_by=("recency", "corroboration"), min_similarity=0.05):
@@ -211,15 +244,24 @@ class MekoMemoryService(MemoryService):
         want_main = kinds is None or any(k != "experience" for k in kinds)
         targets = [(s, kd) for s in scopes for kd, ok in (("experience", want_reports and s.startswith("company-")),
                                                           (None, want_main)) if ok]
-        for scope, kd in targets:
-            dp = self.datapack_id(scope, create=False, kind=kd)
-            if not dp:
-                continue
+        def search(target):
+            scope, kd = target
             try:
-                data = self._call("memory_search", {"query": query, "datapack_id": dp,
-                                                        "limit": max(10, k * 4)})
+                dp = self.datapack_id(scope, create=False, kind=kd)
+                if not dp:
+                    return scope, None
+                return scope, self._call("memory_search", {"query": query, "datapack_id": dp,
+                                                           "limit": max(10, k * 4)})
             except MekoError as e:
                 print(f"[meko] recall failed for {scope}: {e}")  # no Meko → no context, never invented
+                return scope, None
+
+        # Datapacks are searched in parallel: one Meko round-trip of latency, not one per datapack.
+        with ThreadPoolExecutor(max_workers=max(1, min(6, len(targets)))) as pool:
+            results = list(pool.map(search, targets))
+
+        for scope, data in results:
+            if data is None:
                 continue
             rows = [d for d in _all_dicts(data)
                     if isinstance(_first(d, "memory", "text", "content"), str)]
@@ -234,6 +276,8 @@ class MekoMemoryService(MemoryService):
                 m_tag = _TAG.search(text)
                 bm_id = meta.get("bm_id") or (m_tag.group(1) if m_tag else None)
                 rec = self.ledger.get(bm_id) if bm_id else None
+                if rec is None:
+                    rec = self._match(scope, text)  # Meko rewrote the text and dropped our tag
                 if rec is None:
                     # Meko returned something the ledger doesn't know (e.g. an auto-extracted fact).
                     # Still honest to show; infer what we can from the text.

@@ -30,7 +30,9 @@ def recall_context(student_id: str, company: str, role: str) -> dict:
     patterns = mem.recall(f"{company} {role} interview rounds topics asked",
                           [company_scope(company)], requester=student_id, k=8, kinds=["pattern"],
                           min_similarity=-1)
-    commitments = mem.list(student_scope(student_id), student_id, kinds=["next_plan"], statuses=("active",))
+    # Through recall (Meko), not a ledger read: anything shown as context must come from memory search.
+    commitments = mem.recall("next session drill", [student_scope(student_id)], requester=student_id,
+                             k=1, kinds=["next_plan"], min_similarity=-1)
     lessons = mem.recall(f"batch working on {company} interview topics",
                          [batch_scope(datetime.now(timezone.utc).year)], requester=student_id, k=3,
                          kinds=["lesson"], min_similarity=-1)

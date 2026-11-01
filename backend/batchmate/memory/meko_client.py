@@ -26,7 +26,8 @@ CALL_LOG: deque = deque(maxlen=300)
 def _log(tool: str, args: dict, ok: bool, ms: int, note: str = ""):
     shown = {k: (v[:60] + "…" if isinstance(v, str) and len(v) > 60 else v)
              for k, v in args.items() if k not in ("content_base64",)}
-    CALL_LOG.append({"at": time.time(), "tool": tool, "args": shown, "ok": ok, "ms": ms, "note": note})
+    CALL_LOG.append({"at": time.time(), "tool": tool, "args": shown, "ok": ok, "ms": ms, "note": note,
+                     "datapack": args.get("datapack_id") or args.get("name")})
 
 
 def parse_result(res) -> dict | list:
@@ -91,19 +92,25 @@ class MekoClient:
                 pass
         self._stack, self._session = None, None
 
+    async def _session_ready(self):
+        async with self._lock:  # only connecting is serialised; calls run concurrently
+            if self._session is None:
+                await self._connect()
+            return self._session
+
     async def _call(self, tool: str, args: dict):
-        async with self._lock:
-            for attempt in (1, 2):
-                try:
-                    if self._session is None:
-                        await self._connect()
-                    return await self._session.call_tool(tool, args)
-                except MekoError:
+        for attempt in (1, 2):
+            session = await self._session_ready()
+            try:
+                return await session.call_tool(tool, args)
+            except MekoError:
+                raise
+            except Exception:
+                async with self._lock:  # dropped session → reconnect once
+                    if self._session is session:
+                        await self._close()
+                if attempt == 2:
                     raise
-                except Exception:
-                    await self._close()  # dropped session → reconnect once
-                    if attempt == 2:
-                        raise
 
     def call(self, tool: str, args: dict, timeout: float = 30):
         args = {k: v for k, v in args.items() if v is not None}

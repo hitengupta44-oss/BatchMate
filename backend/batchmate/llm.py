@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from functools import lru_cache
 from typing import Callable, TypeVar
 
@@ -68,3 +69,24 @@ def structured(schema: type[T], system: str, user: str, offline: Callable[[], T]
     if from_errors:
         print("[llm] all providers failed, using offline heuristic:", "; ".join(from_errors))
     return offline()
+
+
+_probe_cache: dict = {}
+
+
+def probe(ttl_s: int = 120) -> dict:
+    """Is a real LLM answering? Tries each provider with a tiny prompt; cached for ttl_s."""
+    if _probe_cache and time.time() - _probe_cache["at"] < ttl_s:
+        return _probe_cache["result"]
+    result = {"provider": "offline", "live": False, "errors": []}
+    for p in _providers():
+        t0 = time.time()
+        try:
+            _model(p).invoke([("human", "Reply with the single word OK.")])
+            result = {"provider": p, "live": True, "ms": int((time.time() - t0) * 1000),
+                      "errors": result["errors"]}
+            break
+        except Exception as e:
+            result["errors"].append(f"{p}: {e.__class__.__name__}: {str(e)[:200]}")
+    _probe_cache.update({"at": time.time(), "result": result})
+    return result
