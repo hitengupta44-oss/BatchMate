@@ -149,7 +149,7 @@ export default function Mock() {
           <span>{form.memory ? "Memory on" : "Memory off"}</span>
         </label>
         <button className="btn btn-ink" type="submit" disabled={busy === "start"}>
-          {busy === "start" ? "Planning…" : sid ? "Start a new mock" : "Start mock"}
+          {busy === "start" ? (form.memory ? "Recalling from Meko…" : "Planning…") : sid ? "Start a new mock" : "Start mock"}
         </button>
       </form>
 
@@ -209,7 +209,13 @@ export default function Mock() {
                   </li>
                 );
               })}
-              {busy === "answer" && <li className="thinking">Reading your answer…</li>}
+              {busy === "answer" && (
+                <li className="thinking">
+                  {form.memory
+                    ? "Scoring your answer, then recalling your memory from Meko for the next question. This takes about 10 seconds."
+                    : "Scoring your answer…"}
+                </li>
+              )}
               <li ref={endRef} aria-hidden="true" className="script-end" />
             </ol>
 

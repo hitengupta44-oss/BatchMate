@@ -163,6 +163,9 @@ textarea { resize: vertical; }
   position: sticky; top: 16px; background: white; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 14px 14px 10px; max-height: calc(100vh - 32px); overflow: auto;
 }
+.register-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.register-closed { padding: 12px 14px; }
+.register-toggle { width: 100%; }
 .register-title { font-family: var(--font-serif), Georgia, serif; font-size: 1.15rem; margin: 0; color: var(--ink); }
 .register-sub { font-size: 0.78rem; color: var(--muted); margin: 2px 0 10px; }
 .register-empty { font-size: 0.85rem; color: var(--muted); }

@@ -24,6 +24,23 @@ function shortPack(name) {
 
 /** Live register of every Meko call the server makes. Polls while `active`. */
 export default function MekoRegister({ active = true, pulse = 0 }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    try {
+      setOpen(window.localStorage.getItem("bm_register_open") === "1");
+    } catch {
+      /* storage blocked: stay closed */
+    }
+  }, []);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      window.localStorage.setItem("bm_register_open", next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
   const [rows, setRows] = useState([]);
   const [error, setError] = useState(null);
   const newest = useRef(0);
@@ -45,6 +62,7 @@ export default function MekoRegister({ active = true, pulse = 0 }) {
         if (alive) setError(e.message);
       }
     };
+    if (!open) return () => { alive = false; };
     load();
     if (!active) return () => { alive = false; };
     const t = setInterval(load, 2500);
@@ -52,11 +70,25 @@ export default function MekoRegister({ active = true, pulse = 0 }) {
       alive = false;
       clearInterval(t);
     };
-  }, [active, pulse]);
+  }, [active, pulse, open]);
+
+  if (!open) {
+    return (
+      <aside className="register register-closed" aria-label="Meko activity">
+        <button type="button" className="btn btn-quiet register-toggle" onClick={toggle} aria-expanded="false">
+          Show Meko activity
+        </button>
+        <p className="register-sub">See every call this app makes to Meko, live.</p>
+      </aside>
+    );
+  }
 
   return (
     <aside className="register" aria-label="Meko activity">
-      <h2 className="register-title">Meko register</h2>
+      <div className="register-head">
+        <h2 className="register-title">Meko register</h2>
+        <button type="button" className="link-button" onClick={toggle} aria-expanded="true">Hide</button>
+      </div>
       <p className="register-sub">Every call this app makes to Meko, live. Memory text is never shown here.</p>
       {error && <p className="register-empty">{error}</p>}
       {!error && rows.length === 0 && (

@@ -75,7 +75,7 @@ export default function Ask() {
                 <li key={i} className="ask-turn">
                   <p className="a">{t.q}</p>
                   {t.answer === null ? (
-                    <p className="thinking">Recalling from memory…</p>
+                    <p className="thinking">Recalling from Meko, then writing an answer. This takes about 10 seconds.</p>
                   ) : (
                     <div className="coach-answer">
                       <p className="q">{t.answer}</p>
